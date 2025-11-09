@@ -61,6 +61,24 @@ if uploaded_file is not None:
         if st.button("Clear cached models"):
             st.session_state["inferencer_cache"] = {}
 
+        # Optional: download model from URL to bypass upload limits
+        st.subheader("Download model from URL")
+        dl_url = st.text_input("Model URL (.pt)", value="", help="Direct link to a .pt file")
+        dl_name = st.text_input("Save as (optional)", value="", help="Filename under checkpoints/ (leave empty to auto-use URL name)")
+        if st.button("Download .pt to checkpoints") and dl_url.strip():
+            try:
+                import shutil
+                from urllib.request import urlopen
+                url = dl_url.strip()
+                fname = dl_name.strip() or Path(url).name or "downloaded_model.pt"
+                dest = Path(models_dir or "checkpoints") / fname
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with urlopen(url) as resp, open(dest, "wb") as out:
+                    shutil.copyfileobj(resp, out)
+                st.success(f"Downloaded to {dest}")
+            except Exception as e:
+                st.error(f"Download failed: {e}")
+
         st.header("Parameters")
         mode = st.selectbox("Threshold mode", ["Static", "Dynamic (percentile)"])
         if mode == "Static":

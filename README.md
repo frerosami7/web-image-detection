@@ -19,6 +19,13 @@ If you want immediate results without training, download a pretrained ReverseDis
 
 To clear/reload models, use the "Clear cached models" button in the sidebar.
 
+Note on large .pt files (>200MB):
+- The app is configured to allow large uploads via `.streamlit/config.toml` (server.maxUploadSize = 1024).
+- Prefer not to upload huge files in the browser. Instead use one of:
+  - Place the file under `checkpoints/` on disk and use auto-discovery.
+  - Use the sidebar "Download model from URL" to fetch the file directly to `checkpoints/`.
+  - Use Git LFS or a release asset to distribute the model and a small download script.
+
 ## Features
 - **Anomalib Models**: Patchcore, Padim, STFPM and others via a unified API.
 - **Folder Dataset Training**: Train directly on a normal/anomalous image folder layout.
