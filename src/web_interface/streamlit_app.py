@@ -1,5 +1,13 @@
 import streamlit as st
 import numpy as np
+import sys
+from pathlib import Path
+
+# Ensure project root on sys.path for Streamlit Cloud (where working dir may differ)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
 try:
     import cv2
 except Exception as e:
@@ -7,9 +15,14 @@ except Exception as e:
     CV2_IMPORT_ERROR = str(e)
 from PIL import Image
 
-# Use mock-friendly autoencoder and artifact-capable detector
-from src.models.autoencoder import Autoencoder
-from src.inference.detector import Detector
+try:
+    from src.models.autoencoder import Autoencoder
+    from src.inference.detector import Detector
+except ModuleNotFoundError:
+    # Fallback: attempt relative import if src package resolution fails
+    sys.stderr.write("[WARN] Falling back to relative imports; ensure src/__init__.py exists.\n")
+    from models.autoencoder import Autoencoder  # type: ignore
+    from inference.detector import Detector  # type: ignore
 
 st.set_page_config(page_title="Image Anomaly Detection", layout="wide")
 
