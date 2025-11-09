@@ -98,8 +98,41 @@ class Detector:
     def _mask_and_boxes(self, err_norm: np.ndarray, threshold: float, min_region_area: int, rotated_boxes: bool = False):
         mask = (err_norm >= threshold).astype(np.uint8) * 255
         if cv2 is None:
-            # Fallback: no morphology or contours; just return mask and no boxes
-            return mask, [], []
+            # Pure numpy fallback: connected component labeling to get boxes.
+            # Simple 4-neighbor BFS labeling; rotated boxes not supported.
+            bin_bool = mask.astype(bool)
+            visited = np.zeros_like(bin_bool, dtype=bool)
+            h, w = bin_bool.shape
+            boxes = []
+            def neighbors(y, x):
+                for dy, dx in ((1,0),(-1,0),(0,1),(0,-1)):
+                    ny, nx = y+dy, x+dx
+                    if 0 <= ny < h and 0 <= nx < w:
+                        yield ny, nx
+            for y in range(h):
+                for x in range(w):
+                    if bin_bool[y, x] and not visited[y, x]:
+                        # BFS component
+                        q = [(y,x)]
+                        visited[y, x] = True
+                        ys = [y]; xs = [x]
+                        while q:
+                            cy, cx = q.pop()
+                            for ny, nx in neighbors(cy, cx):
+                                if bin_bool[ny, nx] and not visited[ny, nx]:
+                                    visited[ny, nx] = True
+                                    q.append((ny, nx))
+                                    ys.append(ny); xs.append(nx)
+                        min_y, max_y = min(ys), max(ys)
+                        min_x, max_x = min(xs), max(xs)
+                        area = (max_x - min_x + 1) * (max_y - min_y + 1)
+                        if area >= min_region_area:
+                            boxes.append([int(min_x), int(min_y), int(max_x - min_x + 1), int(max_y - min_y + 1)])
+            # Clean mask: keep only accepted boxes
+            clean_mask = np.zeros_like(mask)
+            for x, y, w_box, h_box in boxes:
+                clean_mask[y:y+h_box, x:x+w_box] = 255
+            return clean_mask, boxes, []
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
