@@ -46,10 +46,22 @@ if uploaded_file is not None:
     # Parameters sidebar
     with st.sidebar:
         st.header("Parameters")
-        threshold = st.slider("Mask threshold", 0.0, 1.0, 0.5, 0.01, help="Threshold on normalized error map")
+        mode = st.selectbox("Threshold mode", ["Static", "Dynamic (percentile)"])
+        if mode == "Static":
+            threshold = st.slider("Mask threshold", 0.0, 1.0, 0.5, 0.01, help="Threshold on normalized error map")
+            dynamic = False
+            dynamic_pct = 98.0
+        else:
+            threshold = 0.5  # unused in dynamic
+            dynamic = True
+            dynamic_pct = st.slider("Dynamic percentile", 80.0, 99.9, 98.0, 0.1,
+                                     help="Use percentile of error map as adaptive threshold")
         min_region_area = st.number_input("Min region area (px)", min_value=0, value=50, step=5,
                                           help="Small regions are removed")
         alpha = st.slider("Overlay alpha", 0.0, 1.0, 0.45, 0.01, help="Blend factor for heatmap overlay")
+        smooth = st.checkbox("Reduce noise (smooth)", value=False)
+        smooth_kernel = st.selectbox("Smooth kernel", [3,5,7], index=1)
+        draw_rotated = st.checkbox("Rotated boxes", value=False, help="Use minimum-area rotated rectangles")
         colormap = st.selectbox("Colormap", ["JET", "TURBO", "HOT", "PARULA"], index=0)
 
     # Detect anomalies
@@ -65,6 +77,11 @@ if uploaded_file is not None:
                     min_region_area=int(min_region_area),
                     alpha=alpha,
                     colormap=colormap,
+                    dynamic=dynamic,
+                    dynamic_pct=float(dynamic_pct),
+                    smooth=bool(smooth and cv2 is not None),
+                    smooth_kernel=int(smooth_kernel),
+                    rotated=bool(draw_rotated and cv2 is not None),
                 ) if cv2 is not None else {}
 
                 # Prediction status and metrics
@@ -94,6 +111,9 @@ if uploaded_file is not None:
                 if cv2 is not None and result:
                     for x, y, w, h in result.get("boxes", []):
                         cv2.rectangle(boxed, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                    for pts in result.get("rotated_boxes", []):
+                        pts_np = np.array(pts, dtype=np.int32)
+                        cv2.polylines(boxed, [pts_np], isClosed=True, color=(0,255,0), thickness=2)
                 st.image(boxed, caption="Bounding boxes" if result else "Bounding boxes (unavailable)", width='stretch')
 
                 with st.expander("Advanced outputs"):

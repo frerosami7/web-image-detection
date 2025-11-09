@@ -71,28 +71,45 @@ class Detector:
         heat_rgb = cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
         return heat_rgb
 
-    def _mask_and_boxes(self, err_norm: np.ndarray, threshold: float, min_region_area: int) -> (np.ndarray, List[List[int]]):
+    def _mask_and_boxes(self, err_norm: np.ndarray, threshold: float, min_region_area: int, rotated_boxes: bool = False):
         mask = (err_norm >= threshold).astype(np.uint8) * 255
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        boxes = []
+        boxes = []  # axis-aligned [x,y,w,h]
+        rboxes = []  # rotated boxes as 4-point polygons
         clean_mask = np.zeros_like(mask)
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < min_region_area:
                 continue
-            x, y, w, h = cv2.boundingRect(cnt)
-            boxes.append([int(x), int(y), int(w), int(h)])
+            if rotated_boxes:
+                rect = cv2.minAreaRect(cnt)
+                pts = cv2.boxPoints(rect)
+                pts = np.int32(pts)
+                rboxes.append(pts.tolist())
+                x, y, w, h = cv2.boundingRect(cnt)
+                boxes.append([int(x), int(y), int(w), int(h)])
+            else:
+                x, y, w, h = cv2.boundingRect(cnt)
+                boxes.append([int(x), int(y), int(w), int(h)])
             cv2.drawContours(clean_mask, [cnt], -1, 255, thickness=cv2.FILLED)
-        return clean_mask, boxes
+        return clean_mask, boxes, rboxes
 
     def _overlay(self, original: np.ndarray, heatmap: np.ndarray, alpha: float) -> np.ndarray:
         return cv2.addWeighted(heatmap, alpha, original, 1 - alpha, 0)
 
-    def detect(self, image: np.ndarray, threshold: float = 0.5, min_region_area: int = 50,
-               alpha: float = 0.45, colormap: str = "JET") -> Dict[str, Any]:
+    def detect(self, image: np.ndarray,
+               threshold: float = 0.5,
+               min_region_area: int = 50,
+               alpha: float = 0.45,
+               colormap: str = "JET",
+               dynamic: bool = False,
+               dynamic_pct: float = 98.0,
+               smooth: bool = False,
+               smooth_kernel: int = 5,
+               rotated: bool = False) -> Dict[str, Any]:
         """Full artifact generation pipeline for a single RGB uint8 image."""
         orig_h, orig_w = image.shape[:2]
         # prepare input for model
@@ -101,8 +118,18 @@ class Detector:
         x_norm = self._normalize(x_resized)
         recon = self._reconstruct(x_norm)
         err_norm = self._error_map(x_norm, recon)
+        if smooth and smooth_kernel and smooth_kernel % 2 == 1:
+            try:
+                err_norm = cv2.GaussianBlur(err_norm, (smooth_kernel, smooth_kernel), 0)
+                # renormalize after blur
+                err_norm = (err_norm - err_norm.min()) / (err_norm.max() - err_norm.min() + 1e-8)
+            except Exception:
+                pass
+        # choose threshold
+        thr = float(np.percentile(err_norm, dynamic_pct)) if dynamic else float(threshold)
+
         heatmap_small = self._make_heatmap(err_norm, colormap)
-        mask_small, boxes_small = self._mask_and_boxes(err_norm, threshold, min_region_area)
+        mask_small, boxes_small, rboxes_small = self._mask_and_boxes(err_norm, thr, min_region_area, rotated_boxes=rotated)
         # resize artifacts back
         heatmap = cv2.resize(heatmap_small, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
         mask = cv2.resize(mask_small, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
@@ -113,8 +140,16 @@ class Detector:
         scale_x = orig_w / heatmap_small.shape[1]
         scale_y = orig_h / heatmap_small.shape[0]
         boxes = [[int(x * scale_x), int(y * scale_y), int(w * scale_x), int(h * scale_y)] for x, y, w, h in boxes_small]
+        rboxes = []
+        if rotated and len(rboxes_small) > 0:
+            for pts in rboxes_small:
+                pts_np = np.array(pts, dtype=np.float32)
+                pts_np[:, 0] *= scale_x
+                pts_np[:, 1] *= scale_y
+                rboxes.append(pts_np.astype(int).tolist())
         anomaly_score = float(err_norm.mean())
-        is_anomaly = anomaly_score >= threshold  # simple heuristic
+        used_thr = thr
+        is_anomaly = anomaly_score >= used_thr  # simple heuristic
         confidence = float(err_norm.max())
         return {
             "anomaly_score": anomaly_score,
@@ -124,12 +159,18 @@ class Detector:
             "mask": mask,
             "overlay": overlay,
             "boxes": boxes,
+            "rotated_boxes": rboxes,
             "error_map": error_map,
             "params": {
-                "threshold": threshold,
+                "threshold": float(threshold),
+                "dynamic": bool(dynamic),
+                "dynamic_pct": float(dynamic_pct),
                 "min_region_area": min_region_area,
-                "alpha": alpha,
+                "alpha": float(alpha),
                 "colormap": colormap,
+                "smooth": bool(smooth),
+                "smooth_kernel": int(smooth_kernel),
+                "rotated": bool(rotated),
             },
         }
 
