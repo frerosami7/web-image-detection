@@ -1,103 +1,80 @@
 # Image Anomaly Detection Project
 
 ## Overview
-This project implements an Image Anomaly Detection system using deep learning techniques, specifically Convolutional Neural Networks (CNN) and Autoencoders. The goal is to identify anomalies in images, which can be useful in various applications such as quality control, medical imaging, and security.
+This project now focuses on visual anomaly detection using **Anomalib** (state-of-the-art PyTorch-based anomaly detection library). Earlier mock CNN/Autoencoder components have been removed. You can train an Anomalib model on a folder dataset and run real inference through the Streamlit UI or CLI scripts.
 
 ## Features
-- **Deep Learning Models**: Utilizes CNN and Autoencoder architectures for effective anomaly detection.
-- **Data Preprocessing**: Includes scripts for image preprocessing and augmentation to enhance model robustness.
-- **Training and Evaluation**: Comprehensive training and evaluation scripts to ensure model performance.
-- **Inference**: Real-time anomaly detection in images and video streams.
-- **Web Interface**: User-friendly interfaces built with Gradio and Streamlit for easy interaction.
-- **REST API**: Deploys the model as a REST API service for integration with other applications.
-- **Real-time Video Processing**: Processes video streams to detect anomalies in real-time.
+- **Anomalib Models**: Patchcore, Padim, STFPM and others via a unified API.
+- **Folder Dataset Training**: Train directly on a normal/anomalous image folder layout.
+- **Artifact Generation**: Heatmap, mask, overlay, bounding boxes and anomaly score.
+- **Adaptive Thresholding**: Static or dynamic percentile-based mask creation.
+- **Streamlit UI**: Upload an image + checkpoint for instant visualization.
+- **CLI Inference Script**: Batch process a directory with artifact export.
+- **Optional REST/API**: Existing endpoints can be adapted to serve Anomalib predictions.
 
-## Project Structure
+## Simplified Structure (Key Files)
 ```
-image-anomaly-detection
-├── src
-│   ├── main.py
-│   ├── models
-│   │   ├── __init__.py
-│   │   ├── cnn_model.py
-│   │   └── autoencoder.py
-│   ├── data
-│   │   ├── __init__.py
-│   │   ├── preprocessing.py
-│   │   └── augmentation.py
-│   ├── training
-│   │   ├── __init__.py
-│   │   ├── train.py
-│   │   └── evaluate.py
-│   ├── inference
-│   │   ├── __init__.py
-│   │   ├── detector.py
-│   │   └── video_processor.py
-│   ├── api
-│   │   ├── __init__.py
-│   │   ├── app.py
-│   │   └── endpoints.py
-│   ├── web_interface
-│   │   ├── __init__.py
-│   │   ├── gradio_app.py
-│   │   └── streamlit_app.py
-│   └── utils
-│       ├── __init__.py
-│       ├── config.py
-│       └── visualization.py
-├── configs
-│   ├── model_config.yaml
-│   └── training_config.yaml
-├── notebooks
-│   ├── data_exploration.ipynb
-│   └── model_analysis.ipynb
-├── tests
-│   ├── __init__.py
-│   ├── test_models.py
-│   └── test_preprocessing.py
-├── requirements.txt
-├── setup.py
-├── Dockerfile
-└── README.md
+src/
+  inference/
+    anomalib_detector.py     <- single-image Anomalib inference & artifacts
+    detector.py              <- legacy reconstruction-based pipeline (fallback/no ckpt)
+  training/
+    train_anomalib.py        <- simple folder-based training script
+  web_interface/
+    streamlit_app.py         <- Anomalib-only UI (upload image & ckpt)
+  data/preprocessing.py      <- basic preprocessing utilities
+requirements.txt             <- includes anomalib, torch; tensorflow removed
+README.md                    <- this file
+runtime.txt                  <- pins Python version (e.g., 3.10.13 for deployment)
 ```
 
 ## Installation
-1. Clone the repository:
-   ```
-   git clone https://github.com/enrico310786/Image_Anomaly_Detection.git
-   cd Image_Anomaly_Detection
-   ```
-2. Create a virtual environment:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-   ```
-3. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```powershell
+git clone https://github.com/frerosami7/web-image-detection.git
+cd web-image-detection
+python -m venv .venv
+./.venv/Scripts/Activate.ps1   # Windows PowerShell
+pip install -r requirements.txt
+```
 
-## Usage
-- To train the model, run:
-  ```
-  python src/training/train.py
-  ```
-- To evaluate the model, run:
-  ```
-  python src/training/evaluate.py
-  ```
-- To start the web interface using Gradio:
-  ```
-  python src/web_interface/gradio_app.py
-  ```
-- To start the web interface using Streamlit:
-  ```
-  streamlit run src/web_interface/streamlit_app.py
-  ```
-- To run the REST API service:
-  ```
-  python src/api/app.py
-  ```
+## Core Workflows
+
+### 1. Prepare Folder Dataset
+Required layout (segmentation or classification tasks both supported):
+```
+data/<category>/
+  train/
+    good/           # only normal images
+  test/
+    good/
+    anomalous/      # anomalous samples
+  ground_truth/     # optional pixel masks (segmentation)
+```
+
+### 2. Train Anomalib Model
+```powershell
+python src/training/train_anomalib.py --data-root data/my_category --model Patchcore --task segmentation --image-size 256
+```
+Checkpoint (.ckpt) will be saved under Anomalib's default results path (varies by version). Locate it via:
+```powershell
+Get-ChildItem -Recurse -Filter *.ckpt | Select-Object FullName
+```
+
+### 3. Streamlit Inference (Single Image)
+```powershell
+streamlit run src/web_interface/streamlit_app.py
+```
+In the sidebar:
+1. Enter model class (e.g., Patchcore).
+2. Provide or upload checkpoint (.ckpt).
+3. Optionally adjust threshold mode, percentile, smoothing, region area.
+4. Upload an image and click "Detect Anomalies".
+
+### 4. Batch Inference CLI
+```powershell
+python src/inference/anomalib_infer.py --data-root path\to\images --ckpt path\to\model.ckpt --model Patchcore --output-dir anomalib_outputs
+```
+Generates: `*_heatmap.png`, `*_overlay.png`, `*_mask.png`, `*_boxes.png`, `*_meta.txt`.
 
 ### Visual Anomaly Artifacts (Streamlit)
 The Streamlit interface now produces several visual artifacts to help interpret anomalies:
@@ -119,27 +96,26 @@ Min region area | Filters out tiny noisy regions below the given pixel area
 Overlay alpha | Blend strength of heatmap over the original image
 Colormap | Color style for the heatmap (JET, TURBO, HOT, PARULA)
 
-### Mock vs Real Models
-Currently the project uses mock CNN/Autoencoder implementations if TensorFlow is unavailable. The visual pipeline still works, but outputs are random/demonstrative. To enable real anomaly detection:
-1. Install a working deep learning backend (TensorFlow or PyTorch).
-2. Replace mock model files with trained versions.
-3. Ensure the autoencoder's `predict` returns reconstructed images with the same shape as input.
+### Legacy Reconstruction Detector
+File `src/inference/detector.py` remains as a lightweight, mock-compatible reconstruction+error demo. For production use, prefer `anomalib_detector.py` via Streamlit or the batch script.
 
-### Programmatic Use of Detector
-You can generate artifacts directly:
+### Programmatic Single Image (Anomalib)
 ```python
-from src.inference.detector import Detector
-from src.models.autoencoder import Autoencoder
-import cv2
+import numpy as np
+from PIL import Image
+from src.inference.anomalib_detector import single_image_predict
 
-auto = Autoencoder()  # or load a real trained model
-det = Detector(autoencoder=auto)
-img = cv2.imread("path/to/image.jpg")[:, :, ::-1]  # BGR to RGB if needed
-result = det.detect(img, threshold=0.5, min_region_area=50, alpha=0.45, colormap="JET")
+image_rgb = np.array(Image.open("sample.png").convert("RGB"))
+result = single_image_predict(
+  image_rgb=image_rgb,
+  model_name="Patchcore",
+  ckpt_path="path/to/best.ckpt",
+  threshold_mode="dynamic",
+  dynamic_pct=98.0,
+)
 print(result["anomaly_score"], result["boxes"])  # access artifacts
 ```
-
-Artifacts available in `result`: `anomaly_score`, `is_anomaly`, `confidence`, `heatmap`, `mask`, `overlay`, `boxes`, `error_map`, `params`.
+Result keys: `anomaly_score`, `is_anomaly`, `confidence`, `heatmap`, `mask`, `overlay`, `boxes`, `rotated_boxes`, `error_map`, `params`.
 
 ## Results (ReverseDistillation / one_up / v0)
 Below are sample outputs produced by the anomaly pipeline (inference example, correct vs incorrect classifications, and confusion matrix). If the images do not render, ensure they are placed in:
@@ -152,8 +128,7 @@ Below are sample outputs produced by the anomaly pipeline (inference example, co
 
 To add new experiment results, replicate the folder structure under `assets/results/<Experiment>/<Variant>/<Version>/` and reference them similarly.
 
-## Using Anomalib (Optional Advanced Library)
-If you want state-of-the-art anomaly detection instead of the lightweight mock pipeline, you can integrate [Anomalib].
+## Anomalib Quick Reference
 
 ### Install
 ```powershell
@@ -179,10 +154,10 @@ python src/inference/anomalib_infer.py --data-root path\to\images --ckpt path\to
 Artifacts are saved per sample: `_heatmap.png`, `_overlay.png`, `_mask.png`, `_boxes.png`, plus a `_meta.txt` with score and threshold.
 
 ### Notes
-- For faster deployment, you can export to OpenVINO: `anomalib export --model Patchcore --ckpt_path path\to\model.ckpt --format openvino --export_root exports/patchcore_ov`.
-- Dynamic thresholding (98th percentile of mask intensity) is used in the helper script for adaptive sensitivity.
-- Adjust contour area filtering in `anomalib_infer.py` if your anomalies are very small.
- - To use Anomalib inside the Streamlit UI: select "Anomalib" backend, enter the model class (e.g. `Patchcore`) and provide/upload your `.ckpt`. The app will produce heatmap, overlay, mask, and boxes using that checkpoint.
+- Export to OpenVINO for speed: `anomalib export --model Patchcore --ckpt_path path\to\model.ckpt --format openvino --export_root exports/patchcore_ov`.
+- Dynamic thresholding (percentile) improves robustness across heterogeneous samples.
+- Adjust `--image-size` for a trade-off between speed and localization granularity.
+- Rotated boxes require OpenCV; on environments without libGL they gracefully degrade to axis-aligned approximations.
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
