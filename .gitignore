@@ -58,18 +58,15 @@ data/*
 Thumbs.db
 .DS_Store
 
-# Models and large files
+# Models and large files (managed via Git LFS)
+# Do NOT ignore model files globally when using Git LFS; rely on .gitattributes.
+# Keep other heavy output dirs ignored as needed.
 models/*.h5
-models/*.pt
-models/*.pth
-models/*.onnx
-models/*.ckpt
-**/checkpoints/
-checkpoints/
-*.pt
-*.ckpt
-*.onnx
-*.pth
+
+# If you still want to keep experimental artifacts out of Git, list their folders here
+# (but allow specific model files you intend to version):
+# experiments/
+# runs/
 
 # Prevent committing large experiment artifacts
 assets/results/*
