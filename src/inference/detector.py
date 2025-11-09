@@ -17,14 +17,21 @@ Parameters supported:
 
 from typing import Dict, Any, List
 import numpy as np
-import cv2
 
-_COLORMAPS = {
-    "JET": cv2.COLORMAP_JET,
-    "TURBO": cv2.COLORMAP_TURBO if hasattr(cv2, "COLORMAP_TURBO") else cv2.COLORMAP_JET,
-    "HOT": cv2.COLORMAP_HOT,
-    "PARULA": cv2.COLORMAP_PARULA if hasattr(cv2, "COLORMAP_PARULA") else cv2.COLORMAP_JET,
-}
+try:
+    import cv2  # type: ignore
+except Exception:
+    cv2 = None  # OpenCV may be unavailable on some platforms (e.g., Streamlit Cloud)
+from PIL import Image, ImageFilter
+
+_COLORMAPS = {}
+if cv2 is not None:
+    _COLORMAPS = {
+        "JET": cv2.COLORMAP_JET,
+        "TURBO": getattr(cv2, "COLORMAP_TURBO", cv2.COLORMAP_JET),
+        "HOT": cv2.COLORMAP_HOT,
+        "PARULA": getattr(cv2, "COLORMAP_PARULA", getattr(cv2, "COLORMAP_TURBO", cv2.COLORMAP_JET)),
+    }
 
 
 class Detector:
@@ -38,7 +45,14 @@ class Detector:
 
     def _resize(self, img: np.ndarray, shape) -> np.ndarray:
         h, w = shape[:2]
-        return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+        if cv2 is not None:
+            return cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
+        pil = Image.fromarray(img)
+        try:
+            resample = Image.Resampling.BILINEAR
+        except AttributeError:
+            resample = Image.BILINEAR
+        return np.array(pil.resize((w, h), resample))
 
     def _normalize(self, img: np.ndarray) -> np.ndarray:
         return img.astype(np.float32) / 255.0
@@ -55,8 +69,12 @@ class Detector:
             except Exception:
                 pass
         # Fallback mock: slight Gaussian blur acts as reconstruction
-        recon_mock = cv2.GaussianBlur(x, (5, 5), 0)
-        return recon_mock
+        # Fallback mock: slight blur via PIL if cv2 is unavailable
+        if cv2 is not None:
+            return cv2.GaussianBlur(x, (5, 5), 0)
+        pil = Image.fromarray((x * 255).clip(0, 255).astype(np.uint8))
+        pil_blur = pil.filter(ImageFilter.GaussianBlur(radius=1.0))
+        return (np.asarray(pil_blur).astype(np.float32)) / 255.0
 
     def _error_map(self, x: np.ndarray, recon: np.ndarray) -> np.ndarray:
         err = np.mean(np.abs(x - recon), axis=-1)  # (H,W)
@@ -65,14 +83,23 @@ class Detector:
         return err.astype(np.float32)
 
     def _make_heatmap(self, err_norm: np.ndarray, colormap: str) -> np.ndarray:
-        cm_code = _COLORMAPS.get(colormap.upper(), cv2.COLORMAP_JET)
         heat_uint8 = (err_norm * 255).astype(np.uint8)
-        heat_bgr = cv2.applyColorMap(heat_uint8, cm_code)
-        heat_rgb = cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
-        return heat_rgb
+        if cv2 is not None:
+            cm_code = _COLORMAPS.get(colormap.upper(), getattr(cv2, "COLORMAP_JET", 2))
+            heat_bgr = cv2.applyColorMap(heat_uint8, cm_code)
+            heat_rgb = cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
+            return heat_rgb
+        # Minimal fallback colormap: red intensity
+        r = heat_uint8
+        g = (heat_uint8 // 2)
+        b = np.zeros_like(heat_uint8)
+        return np.stack([r, g, b], axis=-1)
 
     def _mask_and_boxes(self, err_norm: np.ndarray, threshold: float, min_region_area: int, rotated_boxes: bool = False):
         mask = (err_norm >= threshold).astype(np.uint8) * 255
+        if cv2 is None:
+            # Fallback: no morphology or contours; just return mask and no boxes
+            return mask, [], []
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
@@ -98,7 +125,10 @@ class Detector:
         return clean_mask, boxes, rboxes
 
     def _overlay(self, original: np.ndarray, heatmap: np.ndarray, alpha: float) -> np.ndarray:
-        return cv2.addWeighted(heatmap, alpha, original, 1 - alpha, 0)
+        if cv2 is not None:
+            return cv2.addWeighted(heatmap, alpha, original, 1 - alpha, 0)
+        # Numpy blending fallback
+        return (heatmap.astype(np.float32) * alpha + original.astype(np.float32) * (1.0 - alpha)).clip(0, 255).astype(np.uint8)
 
     def detect(self, image: np.ndarray,
                threshold: float = 0.5,
@@ -131,11 +161,15 @@ class Detector:
         heatmap_small = self._make_heatmap(err_norm, colormap)
         mask_small, boxes_small, rboxes_small = self._mask_and_boxes(err_norm, thr, min_region_area, rotated_boxes=rotated)
         # resize artifacts back
-        heatmap = cv2.resize(heatmap_small, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-        mask = cv2.resize(mask_small, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
+        if cv2 is not None:
+            heatmap = cv2.resize(heatmap_small, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+            mask = cv2.resize(mask_small, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST)
+            error_map = cv2.resize(err_norm, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+        else:
+            heatmap = self._resize(heatmap_small, (orig_h, orig_w, 3))
+            mask = self._resize(mask_small, (orig_h, orig_w))
+            error_map = self._resize((err_norm * 255).astype(np.uint8), (orig_h, orig_w)).astype(np.float32) / 255.0
         overlay = self._overlay(image, heatmap, alpha)
-        # scale error map back
-        error_map = cv2.resize(err_norm, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
         # adjust boxes to original scale
         scale_x = orig_w / heatmap_small.shape[1]
         scale_y = orig_h / heatmap_small.shape[0]
