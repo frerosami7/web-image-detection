@@ -131,23 +131,38 @@ def single_image_predict(image_rgb: np.ndarray,
                     if area >= min_region_area:
                         boxes.append([int(min_x), int(min_y), int(max_x - min_x + 1), int(max_y - min_y + 1)])
 
-    result = {
-        "anomaly_score": float(score),
-        "is_anomaly": bool(score >= 0.5),
-        "confidence": float(m.max()),
-        "heatmap": heat_rgb,
-        "mask": bin_mask,
-        "overlay": overlay,
-        "boxes": boxes,
-        "rotated_boxes": rboxes,
-        "error_map": m,
-        "params": {
-            "backend": "Anomalib",
-            "model": model_name,
-            "ckpt_path": ckpt_path,
-            "threshold": thr,
-            "threshold_mode": threshold_mode,
-            "dynamic_pct": dynamic_pct,
-        },
-    }
+    try:
+        result = {
+            "anomaly_score": float(score),
+            "is_anomaly": bool(score >= 0.5),
+            "confidence": float(m.max()),
+            "heatmap": heat_rgb,
+            "mask": bin_mask,
+            "overlay": overlay,
+            "boxes": boxes,
+            "rotated_boxes": rboxes,
+            "error_map": m,
+            "params": {
+                "backend": "Anomalib",
+                "model": model_name,
+                "ckpt_path": ckpt_path,
+                "threshold": thr,
+                "threshold_mode": threshold_mode,
+                "dynamic_pct": dynamic_pct,
+            },
+        }
+    except Exception:
+        # In case of unexpected shape/type issues, return minimal dictionary to avoid KeyError in UI
+        result = {
+            "anomaly_score": float(score),
+            "is_anomaly": bool(score >= 0.5),
+            "confidence": float(m.max()),
+            "params": {
+                "backend": "Anomalib",
+                "model": model_name,
+                "ckpt_path": ckpt_path,
+                "threshold_mode": threshold_mode,
+                "dynamic_pct": dynamic_pct,
+            },
+        }
     return result

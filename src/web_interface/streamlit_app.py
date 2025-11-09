@@ -96,6 +96,14 @@ if uploaded_file is not None:
                         smooth_kernel=int(smooth_kernel),
                     )
 
+                # Guard: if result empty or missing expected keys, abort visualization gracefully
+                required_keys = ["heatmap", "mask", "overlay"]
+                missing = [k for k in required_keys if k not in result]
+                if missing:
+                    st.warning(f"Prediction incomplete. Missing keys: {missing}. Check checkpoint/model compatibility.")
+                    # Skip artifact rendering if incomplete
+                    result = {}
+
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
                 with col1:
