@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import sys
 from pathlib import Path
+import inspect
 
 # Ensure project root on sys.path for Streamlit Cloud (where working dir may differ)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -71,18 +72,27 @@ if uploaded_file is not None:
         with st.spinner('Analyzing image...'):
             try:
                 # Analyze and produce visual artifacts
-                result = detector.detect(
-                    image_array,
-                    threshold=threshold,
-                    min_region_area=int(min_region_area),
-                    alpha=alpha,
-                    colormap=colormap,
-                    dynamic=dynamic,
-                    dynamic_pct=float(dynamic_pct),
-                    smooth=bool(smooth and cv2 is not None),
-                    smooth_kernel=int(smooth_kernel),
-                    rotated=bool(draw_rotated and cv2 is not None),
-                ) if cv2 is not None else {}
+                # Build kwargs and filter by current detect() signature for backward compatibility
+                detect_kwargs = {
+                    "threshold": threshold,
+                    "min_region_area": int(min_region_area),
+                    "alpha": alpha,
+                    "colormap": colormap,
+                    "dynamic": dynamic,
+                    "dynamic_pct": float(dynamic_pct),
+                    "smooth": bool(smooth and cv2 is not None),
+                    "smooth_kernel": int(smooth_kernel),
+                    "rotated": bool(draw_rotated and cv2 is not None),
+                }
+                try:
+                    sig = inspect.signature(detector.detect)
+                    allowed = set(sig.parameters.keys())
+                    # First param is image; rest are kwargs
+                    filtered = {k: v for k, v in detect_kwargs.items() if k in allowed}
+                except Exception:
+                    filtered = detect_kwargs
+
+                result = detector.detect(image_array, **filtered) if cv2 is not None else {}
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
