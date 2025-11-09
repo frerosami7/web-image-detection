@@ -65,6 +65,15 @@ models/*.pth
 models/*.onnx
 models/*.ckpt
 **/checkpoints/
+checkpoints/
+*.pt
+*.ckpt
+*.onnx
+*.pth
+
+# Prevent committing large experiment artifacts
+assets/results/*
+!assets/results/.keep
 
 # Docker
 *.env

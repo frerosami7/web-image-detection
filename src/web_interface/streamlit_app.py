@@ -15,6 +15,10 @@ except Exception as e:
     cv2 = None
     CV2_IMPORT_ERROR = str(e)
 from PIL import Image
+try:
+    from anomalib.deploy import TorchInferencer
+except Exception:
+    TorchInferencer = None
 
 # Anomalib-only backend
 try:
@@ -39,11 +43,23 @@ if uploaded_file is not None:
 
     # Sidebar parameters
     with st.sidebar:
-        st.header("Anomalib Model")
-        model_name = st.text_input("Model class", value="Patchcore", help="Class in anomalib.models (e.g., Patchcore, Padim, Stfpm)")
-        image_size = st.number_input("Image size", min_value=64, max_value=1024, value=256, step=32)
-        ckpt_path_text = st.text_input("Checkpoint path (.ckpt)", value="", help="Absolute or repo-relative path on server")
-        ckpt_upload = st.file_uploader("Or upload checkpoint", type=["ckpt"], accept_multiple_files=False)
+        st.header("Anomalib Torch Model")
+        image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
+        torch_model_text = st.text_input("Torch model path (.pt)", value="", help="Absolute or repo-relative path on server")
+        torch_model_upload = st.file_uploader("Or upload Torch model", type=["pt"], accept_multiple_files=False)
+        # Auto-discover .pt files under a directory
+        st.subheader("Discover models")
+        models_dir = st.text_input("Scan directory", value="checkpoints", help="Search recursively for .pt models")
+        discovered_paths = []
+        try:
+            mdir = Path(models_dir)
+            if mdir.exists():
+                discovered_paths = [str(p) for p in mdir.rglob("*.pt")]
+        except Exception:
+            discovered_paths = []
+        selected_model = st.selectbox("Discovered .pt models", options=[""] + discovered_paths, index=0)
+        if st.button("Clear cached models"):
+            st.session_state["inferencer_cache"] = {}
 
         st.header("Parameters")
         mode = st.selectbox("Threshold mode", ["Static", "Dynamic (percentile)"])
@@ -68,22 +84,39 @@ if uploaded_file is not None:
     if st.button("🔍 Detect Anomalies", type="primary"):
         with st.spinner('Analyzing image...'):
             try:
-                # Use uploaded checkpoint if provided; otherwise text path
-                tmp_ckpt_path = None
-                if ckpt_upload is not None:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".ckpt") as tf:
-                        tf.write(ckpt_upload.read())
-                        tmp_ckpt_path = tf.name
-                ckpt_path = tmp_ckpt_path or ckpt_path_text.strip()
+                # Use uploaded torch model if provided; otherwise text path
+                tmp_model_path = None
+                if torch_model_upload is not None:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pt") as tf:
+                        tf.write(torch_model_upload.read())
+                        tmp_model_path = tf.name
+                # Priority: uploaded > discovered dropdown > manual text
+                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip())
 
-                if not ckpt_path:
-                    st.warning("Please provide or upload an Anomalib checkpoint (.ckpt).")
+                if not torch_model_path:
+                    st.warning("Please provide or upload an Anomalib Torch model (.pt).")
                     result = {}
                 else:
+                    # Cache/reuse inferencer
+                    infer_cache = st.session_state.setdefault("inferencer_cache", {})
+                    infer_key = f"{torch_model_path}"
+                    cached_infer = infer_cache.get(infer_key)
+                    if cached_infer is None:
+                        if TorchInferencer is None:
+                            st.error("Anomalib TorchInferencer not available. pip install anomalib")
+                            result = {}
+                        else:
+                            try:
+                                cached_infer = TorchInferencer(path=torch_model_path, device="auto")
+                                infer_cache[infer_key] = cached_infer
+                            except Exception as e:
+                                st.error(f"Failed to load model: {e}")
+                                cached_infer = None
+
                     result = single_image_predict(
                         image_rgb=image_array,
-                        model_name=model_name,
-                        ckpt_path=ckpt_path,
+                        model_name="",
+                        ckpt_path="",
                         image_size=int(image_size),
                         threshold_mode=("dynamic" if dynamic else "static"),
                         dynamic_pct=float(dynamic_pct),
@@ -94,15 +127,17 @@ if uploaded_file is not None:
                         rotated=bool(draw_rotated),
                         smooth=bool(smooth),
                         smooth_kernel=int(smooth_kernel),
+                        torch_model_path=torch_model_path,
+                        inferencer=cached_infer,
                     )
 
-                # Guard: if result empty or missing expected keys, abort visualization gracefully
+                # Guard: if some artifacts are missing, warn and render only what's available
                 required_keys = ["heatmap", "mask", "overlay"]
                 missing = [k for k in required_keys if k not in result]
+                incomplete = False
                 if missing:
+                    incomplete = True
                     st.warning(f"Prediction incomplete. Missing keys: {missing}. Check checkpoint/model compatibility.")
-                    # Skip artifact rendering if incomplete
-                    result = {}
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
@@ -120,12 +155,24 @@ if uploaded_file is not None:
                 colA, colB, colC = st.columns(3)
                 with colA:
                     st.image(image_array, caption="Original", width='stretch')
-                    st.image(result["overlay"], caption="Overlay", width='stretch')
+                    overlay_img = result.get("overlay")
+                    if overlay_img is not None:
+                        st.image(overlay_img, caption="Overlay", width='stretch')
+                    else:
+                        st.info("Overlay unavailable")
                 with colB:
-                    st.image(result["heatmap"], caption=f"Heatmap ({colormap})", width='stretch')
+                    heatmap_img = result.get("heatmap")
+                    if heatmap_img is not None:
+                        st.image(heatmap_img, caption=f"Heatmap ({colormap})", width='stretch')
+                    else:
+                        st.info("Heatmap unavailable")
                 with colC:
-                    mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
-                    st.image(result["mask"], caption=mask_caption, width='stretch')
+                    mask_img = result.get("mask")
+                    if mask_img is not None:
+                        mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
+                        st.image(mask_img, caption=mask_caption, width='stretch')
+                    else:
+                        st.info("Mask unavailable")
 
                 # Bounding boxes preview
                 boxed = image_array.copy()
@@ -154,23 +201,25 @@ if uploaded_file is not None:
                         st.write({"min": float(em.min()), "max": float(em.max()), "mean": float(em.mean())})
                     # Provide downloads (skip if cv2 missing)
                     if cv2 is not None:
-                        enc_ok_mask, enc_mask = cv2.imencode('.png', result.get("mask"))
-                        if enc_ok_mask:
-                            st.download_button(
-                                label="Download mask (PNG)",
-                                data=enc_mask.tobytes(),
-                                file_name="mask.png",
-                                mime="image/png",
-                            )
-                        heatmap_bgr = cv2.cvtColor(result.get("heatmap"), cv2.COLOR_RGB2BGR)
-                        enc_ok_heat, enc_heat = cv2.imencode('.png', heatmap_bgr)
-                        if enc_ok_heat:
-                            st.download_button(
-                                label="Download heatmap (PNG)",
-                                data=enc_heat.tobytes(),
-                                file_name="heatmap.png",
-                                mime="image/png",
-                            )
+                        if result.get("mask") is not None:
+                            enc_ok_mask, enc_mask = cv2.imencode('.png', result.get("mask"))
+                            if enc_ok_mask:
+                                st.download_button(
+                                    label="Download mask (PNG)",
+                                    data=enc_mask.tobytes(),
+                                    file_name="mask.png",
+                                    mime="image/png",
+                                )
+                        if result.get("heatmap") is not None:
+                            heatmap_bgr = cv2.cvtColor(result.get("heatmap"), cv2.COLOR_RGB2BGR)
+                            enc_ok_heat, enc_heat = cv2.imencode('.png', heatmap_bgr)
+                            if enc_ok_heat:
+                                st.download_button(
+                                    label="Download heatmap (PNG)",
+                                    data=enc_heat.tobytes(),
+                                    file_name="heatmap.png",
+                                    mime="image/png",
+                                )
             except Exception as e:
                 import traceback
                 st.error("An error occurred while analyzing the image.")

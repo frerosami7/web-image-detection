@@ -5,23 +5,9 @@ import numpy as np
 import cv2
 
 try:
-    from anomalib.data import Folder
-    from anomalib.models import Patchcore
-    from anomalib.engine import Engine
+    from anomalib.deploy import TorchInferencer
 except ImportError as e:  # pragma: no cover
     raise SystemExit("Anomalib not installed. Run: pip install anomalib") from e
-
-
-def load_engine(model_name: str = "Patchcore"):
-    # Extendable: map names to classes
-    model_cls = getattr(__import__("anomalib.models", fromlist=[model_name]), model_name)
-    model = model_cls()
-    engine = Engine()
-    return engine, model
-
-
-def build_datamodule(data_root: str, image_size: int = 256):
-    return Folder(root=data_root, task="segmentation", image_size=image_size)
 
 
 def save_artifacts(out_dir: Path, base: str, image_rgb: np.ndarray, mask: np.ndarray, score: float):
@@ -53,32 +39,48 @@ def save_artifacts(out_dir: Path, base: str, image_rgb: np.ndarray, mask: np.nda
     cv2.imwrite(str(out_dir / f"{base}_overlay.png"), cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
     cv2.imwrite(str(out_dir / f"{base}_mask.png"), bin_mask)
     cv2.imwrite(str(out_dir / f"{base}_boxes.png"), cv2.cvtColor(boxed, cv2.COLOR_RGB2BGR))
+def iter_images(root: Path):
+    exts = {".png", ".jpg", ".jpeg", ".bmp"}
+    for p in root.rglob("*"):
+        if p.suffix.lower() in exts:
+            yield p
 
 
 def infer(args):
-    engine, model = load_engine(args.model)
-    dm = build_datamodule(args.data_root, args.image_size)
+    inferencer = TorchInferencer(path=args.torch_model, device="auto")
 
-    preds = engine.predict(datamodule=dm, model=model, ckpt_path=args.ckpt, return_predictions=True)
-    for idx, p in enumerate(preds):
-        # robust extraction
-        img = p.get("image") if isinstance(p, dict) else getattr(p, "image")
-        score = float(p.get("pred_scores", p.get("pred_score", 0.0))) if isinstance(p, dict) else float(getattr(p, "pred_score", 0.0))
-        mask = p.get("pred_masks") if isinstance(p, dict) else getattr(p, "pred_mask", None)
+    out_dir = Path(args.output_dir)
+    img_paths = list(iter_images(Path(args.data_root)))
+    if not img_paths:
+        raise SystemExit(f"No images found under {args.data_root}")
+
+    for idx, ip in enumerate(img_paths):
+        image_bgr = cv2.imread(str(ip))
+        if image_bgr is None:
+            continue
+        image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        result = inferencer.predict(image=image_rgb)
+
+        score = float(getattr(result, "pred_score", 0.0))
+        mask = getattr(result, "pred_mask", None)
+        if mask is None:
+            # create a soft mask from heat_map if available
+            heat = getattr(result, "heat_map", None)
+            if heat is not None:
+                gray = cv2.cvtColor(heat, cv2.COLOR_RGB2GRAY) if heat.ndim == 3 else heat
+                mask = (gray > np.quantile(gray, 0.98)).astype(np.uint8) * 255
         if mask is None:
             continue
-        base = f"sample_{idx:04d}"
-        save_artifacts(Path(args.output_dir), base, img, mask, score)
+        base = ip.stem
+        save_artifacts(out_dir, base, image_rgb, mask, score)
 
-    print(f"Saved artifacts to {args.output_dir}")
+    print(f"Saved artifacts to {out_dir}")
 
 
 def parse_args():
-    ap = argparse.ArgumentParser(description="Run anomalib model inference and save visualization artifacts.")
-    ap.add_argument("--data-root", required=True, help="Root folder containing images (train/test style not required for inference).")
-    ap.add_argument("--ckpt", required=False, default=None, help="Path to model checkpoint .ckpt (if omitted, uses random init).")
-    ap.add_argument("--model", default="Patchcore", help="Model class name in anomalib.models (default Patchcore).")
-    ap.add_argument("--image-size", type=int, default=256, help="Image resize for datamodule.")
+    ap = argparse.ArgumentParser(description="Run TorchInferencer on images and save visualization artifacts.")
+    ap.add_argument("--data-root", required=True, help="Root folder containing images (recursively scanned).")
+    ap.add_argument("--torch-model", required=True, help="Path to exported Torch model (.pt)")
     ap.add_argument("--output-dir", default="anomalib_outputs", help="Directory to save artifact images.")
     return ap.parse_args()
 
