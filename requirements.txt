@@ -10,5 +10,6 @@ flask
 fastapi
 gradio
 streamlit
+anomalib
 torch
 torchvision

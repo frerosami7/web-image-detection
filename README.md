@@ -182,6 +182,7 @@ Artifacts are saved per sample: `_heatmap.png`, `_overlay.png`, `_mask.png`, `_b
 - For faster deployment, you can export to OpenVINO: `anomalib export --model Patchcore --ckpt_path path\to\model.ckpt --format openvino --export_root exports/patchcore_ov`.
 - Dynamic thresholding (98th percentile of mask intensity) is used in the helper script for adaptive sensitivity.
 - Adjust contour area filtering in `anomalib_infer.py` if your anomalies are very small.
+ - To use Anomalib inside the Streamlit UI: select "Anomalib" backend, enter the model class (e.g. `Patchcore`) and provide/upload your `.ckpt`. The app will produce heatmap, overlay, mask, and boxes using that checkpoint.
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.

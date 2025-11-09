@@ -3,6 +3,7 @@ import numpy as np
 import sys
 from pathlib import Path
 import inspect
+import tempfile
 
 # Ensure project root on sys.path for Streamlit Cloud (where working dir may differ)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +28,7 @@ except ModuleNotFoundError:
 
 st.set_page_config(page_title="Image Anomaly Detection", layout="wide")
 
-# Initialize models
+# Initialize models (mock/built-in)
 autoencoder = Autoencoder()
 detector = Detector(autoencoder=autoencoder)
 
@@ -46,6 +47,9 @@ if uploaded_file is not None:
 
     # Parameters sidebar
     with st.sidebar:
+        st.header("Backend")
+        backend = st.radio("Choose engine", ["Built-in (Mock)", "Anomalib"], index=0, help="Use Anomalib if you have a trained checkpoint.")
+
         st.header("Parameters")
         mode = st.selectbox("Threshold mode", ["Static", "Dynamic (percentile)"])
         if mode == "Static":
@@ -65,34 +69,176 @@ if uploaded_file is not None:
         draw_rotated = st.checkbox("Rotated boxes", value=False, help="Use minimum-area rotated rectangles")
         colormap = st.selectbox("Colormap", ["JET", "TURBO", "HOT", "PARULA"], index=0)
 
+        if backend == "Anomalib":
+            st.divider()
+            st.subheader("Anomalib Settings")
+            model_name = st.text_input("Model class", value="Patchcore", help="Class in anomalib.models, e.g., Patchcore, Padim, Stfpm")
+            image_size = st.number_input("Image size", min_value=64, max_value=1024, value=256, step=32)
+            ckpt_path_text = st.text_input("Checkpoint path (.ckpt)", value="", help="Absolute or repo-relative path on server")
+            ckpt_upload = st.file_uploader("Or upload checkpoint", type=["ckpt"], accept_multiple_files=False)
+
     # Detect anomalies
     if cv2 is None:
         st.error("OpenCV failed to import on this platform. Details: " + CV2_IMPORT_ERROR)
     elif st.button("🔍 Detect Anomalies", type="primary"):
         with st.spinner('Analyzing image...'):
             try:
-                # Analyze and produce visual artifacts
-                # Build kwargs and filter by current detect() signature for backward compatibility
-                detect_kwargs = {
-                    "threshold": threshold,
-                    "min_region_area": int(min_region_area),
-                    "alpha": alpha,
-                    "colormap": colormap,
-                    "dynamic": dynamic,
-                    "dynamic_pct": float(dynamic_pct),
-                    "smooth": bool(smooth and cv2 is not None),
-                    "smooth_kernel": int(smooth_kernel),
-                    "rotated": bool(draw_rotated and cv2 is not None),
-                }
-                try:
-                    sig = inspect.signature(detector.detect)
-                    allowed = set(sig.parameters.keys())
-                    # First param is image; rest are kwargs
-                    filtered = {k: v for k, v in detect_kwargs.items() if k in allowed}
-                except Exception:
-                    filtered = detect_kwargs
+                if st.session_state.get("backend_choice"):
+                    pass  # placeholder to keep streamlit stable on reruns
 
-                result = detector.detect(image_array, **filtered) if cv2 is not None else {}
+                if backend == "Anomalib":
+                    # Prefer uploaded ckpt if provided; otherwise use text path
+                    tmp_ckpt_path = None
+                    if ckpt_upload is not None:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".ckpt") as tf:
+                            tf.write(ckpt_upload.read())
+                            tmp_ckpt_path = tf.name
+                    ckpt_path = tmp_ckpt_path or ckpt_path_text.strip()
+
+                    if not ckpt_path:
+                        st.warning("Please provide or upload an Anomalib checkpoint (.ckpt). Using built-in mock instead.")
+                        backend_effective = "Built-in (Mock)"
+                    else:
+                        backend_effective = "Anomalib"
+
+                    if backend_effective == "Anomalib":
+                        try:
+                            # Lazy import to avoid hard dependency at app start
+                            from anomalib.data import Folder as AnomFolder
+                            from anomalib.engine import Engine as AnomEngine
+                            mod = __import__("anomalib.models", fromlist=[model_name])
+                            ModelCls = getattr(mod, model_name)
+
+                            # Save image to a temp folder and use Folder datamodule
+                            with tempfile.TemporaryDirectory() as td:
+                                img_path = Path(td) / "sample.png"
+                                Image.fromarray(image_array).save(img_path)
+
+                                dm = AnomFolder(root=str(Path(td)), task="segmentation", image_size=int(image_size))
+                                engine = AnomEngine()
+                                model = ModelCls()
+
+                                preds = engine.predict(datamodule=dm, model=model, ckpt_path=str(ckpt_path), return_predictions=True)
+                                # Parse first prediction
+                                p = preds[0] if isinstance(preds, (list, tuple)) and len(preds) > 0 else None
+                                if p is None:
+                                    raise RuntimeError("Anomalib produced no predictions.")
+
+                                # Robust extraction of fields
+                                img = p.get("image") if isinstance(p, dict) else getattr(p, "image")
+                                score = float(p.get("pred_scores", p.get("pred_score", 0.0))) if isinstance(p, dict) else float(getattr(p, "pred_score", 0.0))
+                                mask = p.get("pred_masks") if isinstance(p, dict) else getattr(p, "pred_mask", None)
+                                if mask is None:
+                                    raise RuntimeError("Anomalib did not return a segmentation mask. Try a segmentation-capable model like Patchcore or STFPM.")
+
+                                # Normalize mask and create visualizations
+                                m = mask.astype(np.float32)
+                                m = (m - m.min()) / (m.max() - m.min() + 1e-8)
+                                if smooth and cv2 is not None and int(smooth_kernel) > 1:
+                                    k = int(smooth_kernel) if int(smooth_kernel) % 2 == 1 else int(smooth_kernel) + 1
+                                    m = cv2.GaussianBlur(m, (k, k), 0)
+
+                                # Heatmap
+                                heat = (m * 255).astype(np.uint8)
+                                cmap = {
+                                    "JET": getattr(cv2, "COLORMAP_JET", 2),
+                                    "TURBO": getattr(cv2, "COLORMAP_TURBO", 20),
+                                    "HOT": getattr(cv2, "COLORMAP_HOT", 11),
+                                    "PARULA": getattr(cv2, "COLORMAP_PARULA", getattr(cv2, "COLORMAP_TURBO", 20)),
+                                }.get(colormap, getattr(cv2, "COLORMAP_JET", 2))
+                                heat_color = cv2.applyColorMap(heat, cmap)
+                                heat_rgb = cv2.cvtColor(heat_color, cv2.COLOR_BGR2RGB)
+                                overlay = cv2.addWeighted(heat_rgb, float(alpha), image_array, 1.0 - float(alpha), 0)
+
+                                # Threshold
+                                thr = float(np.quantile(m, float(dynamic_pct) / 100.0)) if dynamic else float(threshold)
+                                bin_mask = (m >= thr).astype(np.uint8) * 255
+
+                                # Contours and boxes
+                                boxes, rboxes = [], []
+                                cnts, _ = cv2.findContours(bin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                                for c in cnts:
+                                    if cv2.contourArea(c) < float(min_region_area):
+                                        continue
+                                    x, y, w, h = cv2.boundingRect(c)
+                                    boxes.append((int(x), int(y), int(w), int(h)))
+                                    if draw_rotated:
+                                        rect = cv2.minAreaRect(c)
+                                        pts = cv2.boxPoints(rect)
+                                        rboxes.append([(int(px), int(py)) for px, py in pts])
+
+                                result = {
+                                    "anomaly_score": float(score),
+                                    "is_anomaly": bool(score >= 0.5),
+                                    "confidence": float(m.max()),
+                                    "heatmap": heat_rgb,
+                                    "mask": bin_mask,
+                                    "overlay": overlay,
+                                    "boxes": boxes,
+                                    "rotated_boxes": rboxes,
+                                    "error_map": m,
+                                    "params": {
+                                        "backend": "Anomalib",
+                                        "model": model_name,
+                                        "ckpt_path": str(ckpt_path),
+                                        "threshold": float(thr),
+                                        "dynamic": bool(dynamic),
+                                        "dynamic_pct": float(dynamic_pct),
+                                        "alpha": float(alpha),
+                                        "colormap": colormap,
+                                        "min_region_area": int(min_region_area),
+                                        "smooth": bool(smooth),
+                                        "smooth_kernel": int(smooth_kernel),
+                                        "rotated": bool(draw_rotated),
+                                    },
+                                }
+                        except ImportError as ie:
+                            st.error("Anomalib is not installed. Run: pip install anomalib")
+                            result = {}
+                        except Exception as ae:
+                            st.error("An error occurred running Anomalib. Falling back to built-in detector.")
+                            st.exception(ae)
+                            backend_effective = "Built-in (Mock)"
+                    if backend_effective != "Anomalib":
+                        # Fall back to built-in detector
+                        detect_kwargs = {
+                            "threshold": threshold,
+                            "min_region_area": int(min_region_area),
+                            "alpha": alpha,
+                            "colormap": colormap,
+                            "dynamic": dynamic,
+                            "dynamic_pct": float(dynamic_pct),
+                            "smooth": bool(smooth and cv2 is not None),
+                            "smooth_kernel": int(smooth_kernel),
+                            "rotated": bool(draw_rotated and cv2 is not None),
+                        }
+                        try:
+                            sig = inspect.signature(detector.detect)
+                            allowed = set(sig.parameters.keys())
+                            filtered = {k: v for k, v in detect_kwargs.items() if k in allowed}
+                        except Exception:
+                            filtered = detect_kwargs
+                        result = detector.detect(image_array, **filtered) if cv2 is not None else {}
+                else:
+                    # Built-in detector path
+                    detect_kwargs = {
+                        "threshold": threshold,
+                        "min_region_area": int(min_region_area),
+                        "alpha": alpha,
+                        "colormap": colormap,
+                        "dynamic": dynamic,
+                        "dynamic_pct": float(dynamic_pct),
+                        "smooth": bool(smooth and cv2 is not None),
+                        "smooth_kernel": int(smooth_kernel),
+                        "rotated": bool(draw_rotated and cv2 is not None),
+                    }
+                    try:
+                        sig = inspect.signature(detector.detect)
+                        allowed = set(sig.parameters.keys())
+                        filtered = {k: v for k, v in detect_kwargs.items() if k in allowed}
+                    except Exception:
+                        filtered = detect_kwargs
+                    result = detector.detect(image_array, **filtered) if cv2 is not None else {}
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
@@ -114,7 +260,8 @@ if uploaded_file is not None:
                 with colB:
                     st.image(result["heatmap"], caption=f"Heatmap ({colormap})", width='stretch')
                 with colC:
-                    st.image(result["mask"], caption=f"Mask (threshold={threshold:.2f})", width='stretch')
+                    mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
+                    st.image(result["mask"], caption=mask_caption, width='stretch')
 
                 # Bounding boxes preview
                 boxed = image_array.copy()
