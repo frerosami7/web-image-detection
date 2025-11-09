@@ -141,6 +141,48 @@ print(result["anomaly_score"], result["boxes"])  # access artifacts
 
 Artifacts available in `result`: `anomaly_score`, `is_anomaly`, `confidence`, `heatmap`, `mask`, `overlay`, `boxes`, `error_map`, `params`.
 
+## Results (ReverseDistillation / one_up / v0)
+Below are sample outputs produced by the anomaly pipeline (inference example, correct vs incorrect classifications, and confusion matrix). If the images do not render, ensure they are placed in:
+
+`assets/results/ReverseDistillation/one_up/v0/`
+
+| Example inference | Right classification | Bad classification | Confusion matrix |
+| ------------------ | ------------------- | ------------------ | ---------------- |
+| ![Example inference](assets/results/ReverseDistillation/one_up/v0/example_inference.png) | ![Right classification](assets/results/ReverseDistillation/one_up/v0/plot_right_classification.png) | ![Bad classification](assets/results/ReverseDistillation/one_up/v0/plot_bad_classification.png) | ![Confusion matrix](assets/results/ReverseDistillation/one_up/v0/one_up_confusion_matrix.png) |
+
+To add new experiment results, replicate the folder structure under `assets/results/<Experiment>/<Variant>/<Version>/` and reference them similarly.
+
+## Using Anomalib (Optional Advanced Library)
+If you want state-of-the-art anomaly detection instead of the lightweight mock pipeline, you can integrate [Anomalib].
+
+### Install
+```powershell
+pip install anomalib
+```
+
+### Train (Example: Patchcore on MVTec "transistor")
+```powershell
+anomalib train --model Patchcore --data anomalib.data.MVTecAD --data.category transistor
+```
+
+### Inference & Localization (CLI)
+```powershell
+anomalib predict --model anomalib.models.Patchcore --data anomalib.data.MVTecAD --data.category transistor --ckpt_path path\to\model.ckpt --return_predictions
+```
+
+### Scripted Inference With Artifacts
+Use `src/inference/anomalib_infer.py` to process a folder of images and save heatmap/mask/overlay/boxes.
+```powershell
+python src/inference/anomalib_infer.py --data-root path\to\images --ckpt path\to\model.ckpt --model Patchcore --output-dir anomalib_outputs
+```
+
+Artifacts are saved per sample: `_heatmap.png`, `_overlay.png`, `_mask.png`, `_boxes.png`, plus a `_meta.txt` with score and threshold.
+
+### Notes
+- For faster deployment, you can export to OpenVINO: `anomalib export --model Patchcore --ckpt_path path\to\model.ckpt --format openvino --export_root exports/patchcore_ov`.
+- Dynamic thresholding (98th percentile of mask intensity) is used in the helper script for adaptive sensitivity.
+- Adjust contour area filtering in `anomalib_infer.py` if your anomalies are very small.
+
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
 

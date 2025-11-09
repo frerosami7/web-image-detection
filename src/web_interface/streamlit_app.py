@@ -161,6 +161,33 @@ if uploaded_file is not None:
 st.subheader("Real-time Video Processing")
 video_file = st.file_uploader("Upload a video...", type=["mp4", "avi"])
 
+# Results gallery section (optional images from repo)
+from pathlib import Path
+with st.expander("Results gallery (ReverseDistillation / one_up / v0)"):
+    try:
+        assets_dir = Path(__file__).resolve().parents[2] / "assets" / "results" / "ReverseDistillation" / "one_up" / "v0"
+        files = {
+            "example_inference.png": "Example inference",
+            "plot_right_classification.png": "Right classification",
+            "plot_bad_classification.png": "Bad classification",
+            "one_up_confusion_matrix.png": "Confusion matrix",
+        }
+        if assets_dir.exists():
+            cols = st.columns(2)
+            idx = 0
+            for fname, title in files.items():
+                fpath = assets_dir / fname
+                if fpath.exists():
+                    with cols[idx % 2]:
+                        st.image(str(fpath), caption=title, use_container_width=True)
+                    idx += 1
+            if idx == 0:
+                st.info(f"No images found in {assets_dir}")
+        else:
+            st.info(f"Place your result images under: {assets_dir}")
+    except Exception:
+        pass
+
 if video_file is not None:
     st.video(video_file)
     # Here you would implement the video processing logic using the detector
