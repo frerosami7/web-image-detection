@@ -1,6 +1,10 @@
 import streamlit as st
 import numpy as np
-import cv2
+try:
+    import cv2
+except Exception as e:
+    cv2 = None
+    CV2_IMPORT_ERROR = str(e)
 from PIL import Image
 
 # Use mock-friendly autoencoder and artifact-capable detector
@@ -36,7 +40,9 @@ if uploaded_file is not None:
         colormap = st.selectbox("Colormap", ["JET", "TURBO", "HOT", "PARULA"], index=0)
 
     # Detect anomalies
-    if st.button("🔍 Detect Anomalies", type="primary"):
+    if cv2 is None:
+        st.error("OpenCV failed to import on this platform. Details: " + CV2_IMPORT_ERROR)
+    elif st.button("🔍 Detect Anomalies", type="primary"):
         with st.spinner('Analyzing image...'):
             try:
                 # Analyze and produce visual artifacts
@@ -46,7 +52,7 @@ if uploaded_file is not None:
                     min_region_area=int(min_region_area),
                     alpha=alpha,
                     colormap=colormap,
-                )
+                ) if cv2 is not None else {}
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
@@ -72,9 +78,10 @@ if uploaded_file is not None:
 
                 # Bounding boxes preview
                 boxed = image_array.copy()
-                for x, y, w, h in result.get("boxes", []):
-                    cv2.rectangle(boxed, (x, y), (x + w, y + h), (255, 0, 0), 2)
-                st.image(boxed, caption="Bounding boxes", width='stretch')
+                if cv2 is not None and result:
+                    for x, y, w, h in result.get("boxes", []):
+                        cv2.rectangle(boxed, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                st.image(boxed, caption="Bounding boxes" if result else "Bounding boxes (unavailable)", width='stretch')
 
                 with st.expander("Advanced outputs"):
                     st.write("Parameters used:", result.get("params", {}))
