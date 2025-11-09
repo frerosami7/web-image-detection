@@ -1,0 +1,26 @@
+batch_size: 32
+learning_rate: 0.001
+num_epochs: 50
+validation_split: 0.2
+optimizer: Adam
+loss_function: binary_crossentropy
+metrics:
+  - accuracy
+  - precision
+  - recall
+  - f1_score
+data_augmentation:
+  rotation_range: 20
+  width_shift_range: 0.1
+  height_shift_range: 0.1
+  shear_range: 0.2
+  zoom_range: 0.2
+  horizontal_flip: true
+  fill_mode: nearest
+checkpoint:
+  save_best_only: true
+  monitor: val_loss
+  filepath: models/best_model.h5
+logging:
+  log_dir: logs/
+  log_level: INFO

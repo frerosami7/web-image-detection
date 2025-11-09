@@ -1,0 +1,14 @@
+numpy
+pandas
+matplotlib
+seaborn
+opencv-python
+Pillow
+tensorflow
+scikit-learn
+flask
+fastapi
+gradio
+streamlit
+torch
+torchvision
