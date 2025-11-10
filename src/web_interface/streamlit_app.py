@@ -57,7 +57,20 @@ if uploaded_file is not None:
                 discovered_paths = [str(p) for p in mdir.rglob("*.pt")]
         except Exception:
             discovered_paths = []
-        selected_model = st.selectbox("Discovered .pt models", options=[""] + discovered_paths, index=0)
+        # Auto-select a packaged default model if present (e.g., reverse_distillation_one_up.pt)
+        default_model_name = "reverse_distillation_one_up.pt"
+        default_model_path = None
+        for p in discovered_paths:
+            if p.endswith(default_model_name):
+                default_model_path = p
+                break
+        select_options = [""] + discovered_paths
+        if default_model_path and default_model_path in select_options:
+            default_index = select_options.index(default_model_path)
+        else:
+            default_index = 0
+        selected_model = st.selectbox("Discovered .pt models", options=select_options, index=default_index,
+                                      help="Models found under scan directory; default auto-selected if bundled.")
         if st.button("Clear cached models"):
             st.session_state["inferencer_cache"] = {}
 
@@ -109,7 +122,8 @@ if uploaded_file is not None:
                         tf.write(torch_model_upload.read())
                         tmp_model_path = tf.name
                 # Priority: uploaded > discovered dropdown > manual text
-                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip())
+                # If a default packaged model exists, prefer it when user has not specified another (keep precedence order)
+                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip() or default_model_path or "")
 
                 if not torch_model_path:
                     st.warning("Please provide or upload an Anomalib Torch model (.pt).")

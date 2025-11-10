@@ -7,7 +7,7 @@ This project now focuses on visual anomaly detection using **Anomalib** (state-o
 If you want immediate results without training, download a pretrained ReverseDistillation Torch model (example provided by reference project):
 
 1. Download: https://drive.google.com/file/d/1zYJMcZyncwqqUanS7mFxQkcwcfqR4QBJ/view?usp=sharing
-2. Save as: `checkpoints/reverse_distillation_one_up.pt` (create the `checkpoints` folder if missing).
+2. Save as: `checkpoints/reverse_distillation_one_up.pt` (create the `checkpoints` folder if missing). If this file is present in the repo checkout, the app will auto-select it by default.
 3. Launch Streamlit:
   ```powershell
   streamlit run src/web_interface/streamlit_app.py
@@ -85,7 +85,7 @@ After training (e.g. Patchcore) use the Anomalib export functionality or include
 streamlit run src/web_interface/streamlit_app.py
 ```
 In the sidebar:
-1. Provide or upload Torch model (`model.pt`).
+1. If `checkpoints/reverse_distillation_one_up.pt` exists, it will be preselected automatically. Otherwise, provide or upload a Torch model (`model.pt`).
 2. Adjust threshold mode (Static/Dynamic), percentile (dynamic), smoothing, min region area.
 3. Upload an image and click "Detect Anomalies".
 
