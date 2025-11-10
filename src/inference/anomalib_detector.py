@@ -105,10 +105,13 @@ def single_image_predict(
             heat_rgb = np.stack([heat_u, heat_u // 2, np.zeros_like(heat_u)], axis=-1)
 
     # Overlay
+    base_img = _ensure_uint8_rgb(out_image)
     overlay = None
     if heat_rgb is not None:
-        base_img = _ensure_uint8_rgb(out_image)
         overlay = (heat_rgb.astype(np.float32) * alpha + base_img.astype(np.float32) * (1 - alpha)).clip(0, 255).astype(np.uint8)
+    else:
+        # Classification-only fallback: show original image as overlay to avoid missing key warnings
+        overlay = base_img
 
     # Bounding boxes
     boxes = []
@@ -156,6 +159,7 @@ def single_image_predict(
                             boxes.append([int(min_x), int(min_y), int(max_x - min_x + 1), int(max_y - min_y + 1)])
 
     # Assemble safe result
+    classification_only = bool(heat_rgb is None and bin_mask is None)
     out = {
         "anomaly_score": float(pred_score),
         "is_anomaly": bool(pred_label == 1),
@@ -173,6 +177,7 @@ def single_image_predict(
             "threshold": thr,
             "threshold_mode": threshold_mode,
             "dynamic_pct": dynamic_pct,
+            "classification_only": classification_only,
         },
     }
 

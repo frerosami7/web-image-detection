@@ -182,13 +182,14 @@ if uploaded_file is not None:
                             inferencer=cached_infer,
                         )
 
-                # Guard: if some artifacts are missing, warn and render only what's available
-                required_keys = ["heatmap", "mask", "overlay"]
+                # Guard: if segmentation heatmap/mask missing, fall back to classification-only UI
+                is_class_only = bool(result.get("params", {}).get("classification_only", False))
+                required_keys = ["overlay"] if is_class_only else ["heatmap", "mask", "overlay"]
                 missing = [k for k in required_keys if k not in result]
                 incomplete = False
                 if missing:
                     incomplete = True
-                    st.warning(f"Prediction incomplete. Missing keys: {missing}. Check checkpoint/model compatibility.")
+                    st.warning(f"Prediction incomplete. Missing keys: {missing}. Check model compatibility.")
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
@@ -211,19 +212,25 @@ if uploaded_file is not None:
                         st.image(overlay_img, caption="Overlay", width='stretch')
                     else:
                         st.info("Overlay unavailable")
-                with colB:
-                    heatmap_img = result.get("heatmap")
-                    if heatmap_img is not None:
-                        st.image(heatmap_img, caption=f"Heatmap ({colormap})", width='stretch')
-                    else:
-                        st.info("Heatmap unavailable")
-                with colC:
-                    mask_img = result.get("mask")
-                    if mask_img is not None:
-                        mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
-                        st.image(mask_img, caption=mask_caption, width='stretch')
-                    else:
-                        st.info("Mask unavailable")
+                if not is_class_only:
+                    with colB:
+                        heatmap_img = result.get("heatmap")
+                        if heatmap_img is not None:
+                            st.image(heatmap_img, caption=f"Heatmap ({colormap})", width='stretch')
+                        else:
+                            st.info("Heatmap unavailable")
+                    with colC:
+                        mask_img = result.get("mask")
+                        if mask_img is not None:
+                            mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
+                            st.image(mask_img, caption=mask_caption, width='stretch')
+                        else:
+                            st.info("Mask unavailable")
+                else:
+                    with colB:
+                        st.info("Classification-only model: heatmap not available")
+                    with colC:
+                        st.info("Classification-only model: mask not available")
 
                 # Bounding boxes preview
                 boxed = image_array.copy()
