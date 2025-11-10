@@ -77,6 +77,13 @@ if uploaded_file is not None:
                 discovered_paths = [str(p) for p in mdir.rglob("*.pt")]
         except Exception:
             discovered_paths = []
+        # Ensure bundled global default is also listed even if scan dir changed
+        try:
+            if 'default_model_path_global' in globals() and default_model_path_global:
+                if default_model_path_global not in discovered_paths:
+                    discovered_paths.append(default_model_path_global)
+        except Exception:
+            pass
         # Auto-select a packaged default model if present (e.g., reverse_distillation_one_up.pt)
         default_model_name = "reverse_distillation_one_up.pt"
         default_model_path = None
@@ -84,6 +91,13 @@ if uploaded_file is not None:
             if p.endswith(default_model_name):
                 default_model_path = p
                 break
+        # Fallback to globally pre-detected bundled path
+        if default_model_path is None:
+            try:
+                if 'default_model_path_global' in globals() and default_model_path_global:
+                    default_model_path = default_model_path_global
+            except Exception:
+                pass
         if default_model_path:
             # Show a banner indicating bundled model will be used by default
             try:
@@ -150,16 +164,18 @@ if uploaded_file is not None:
     if st.button("🔍 Detect Anomalies", type="primary"):
         with st.spinner('Analyzing image...'):
             try:
-                # Use uploaded torch model if provided; otherwise text path
+                # Use uploaded torch model if provided; otherwise discovered/default/text path
                 tmp_model_path = None
                 if torch_model_upload is not None:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pt") as tf:
                         tf.write(torch_model_upload.read())
                         tmp_model_path = tf.name
-                # Priority: uploaded > discovered dropdown > manual text
-                # If a default packaged model exists and user opted to use it, prefer it when no upload/text path provided
-                # Use preloaded bundled model if selected and cached
-                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip() or "")
+                # Priority: uploaded > selected > manual text > default local/global
+                torch_model_path = tmp_model_path or (
+                    selected_model or torch_model_text.strip() or default_model_path or (
+                        default_model_path_global if 'default_model_path_global' in globals() and default_model_path_global else ""
+                    )
+                )
 
                 if not torch_model_path:
                     st.warning("Please provide or upload an Anomalib Torch model (.pt).")
