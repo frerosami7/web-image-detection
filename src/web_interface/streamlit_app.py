@@ -76,9 +76,9 @@ if uploaded_file is not None:
                 pip install anomalib
                 ```
                 If you need GPU acceleration, replace the torch line with the CUDA-specific wheel.
-                After installation, restart the Streamlit app.
-                """)
-    image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
+        After installation, restart the Streamlit app.
+        """)
+        image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
         # Auto-discover .pt files under a directory
         st.subheader("Discover models")
         models_dir = st.text_input("Scan directory", value="checkpoints", help="Search recursively for .pt models")
@@ -135,7 +135,7 @@ if uploaded_file is not None:
         if st.button("Clear cached models"):
             st.session_state["inferencer_cache"] = {}
 
-    # Optional: download model from URL to bypass upload limits
+        # Optional: download model from URL to bypass upload limits
         st.subheader("Download model from URL")
         dl_url = st.text_input("Model URL (.pt)", value="", help="Direct link to a .pt file")
         dl_name = st.text_input("Save as (optional)", value="", help="Filename under checkpoints/ (leave empty to auto-use URL name)")
