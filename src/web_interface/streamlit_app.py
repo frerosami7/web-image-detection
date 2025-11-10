@@ -57,7 +57,7 @@ uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png
 if uploaded_file is not None:
     # Convert the uploaded file to an image
     image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image', width='stretch')
+    st.image(image, caption='Uploaded Image', use_container_width=True)
 
     # Convert PIL to numpy RGB uint8
     image_array = np.array(image.convert("RGB"))
@@ -257,24 +257,24 @@ if uploaded_file is not None:
                 # Visual artifacts
                 colA, colB, colC = st.columns(3)
                 with colA:
-                    st.image(image_array, caption="Original", width='stretch')
+                    st.image(image_array, caption="Original", use_container_width=True)
                     overlay_img = result.get("overlay")
                     if overlay_img is not None:
-                        st.image(overlay_img, caption="Overlay", width='stretch')
+                        st.image(overlay_img, caption="Overlay", use_container_width=True)
                     else:
                         st.info("Overlay unavailable")
                 if not is_class_only:
                     with colB:
                         heatmap_img = result.get("heatmap")
                         if heatmap_img is not None:
-                            st.image(heatmap_img, caption=f"Heatmap ({colormap})", width='stretch')
+                            st.image(heatmap_img, caption=f"Heatmap ({colormap})", use_container_width=True)
                         else:
                             st.info("Heatmap unavailable")
                     with colC:
                         mask_img = result.get("mask")
                         if mask_img is not None:
                             mask_caption = f"Mask (threshold={threshold:.2f})" if not dynamic else f"Mask (p={dynamic_pct:.1f}%)"
-                            st.image(mask_img, caption=mask_caption, width='stretch')
+                            st.image(mask_img, caption=mask_caption, use_container_width=True)
                         else:
                             st.info("Mask unavailable")
                 else:
@@ -299,7 +299,7 @@ if uploaded_file is not None:
                             boxed[y:y+h, x+w-1:x+w] = [255,0,0]
                             boxed[y:y+1, x:x+w] = [255,0,0]
                             boxed[y+h-1:y+h, x:x+w] = [255,0,0]
-                st.image(boxed, caption="Bounding boxes" if result else "Bounding boxes (unavailable)", width='stretch')
+                st.image(boxed, caption="Bounding boxes" if result else "Bounding boxes (unavailable)", use_container_width=True)
 
                 with st.expander("Advanced outputs"):
                     st.write("Parameters used:", result.get("params", {}))
