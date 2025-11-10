@@ -131,23 +131,27 @@ if uploaded_file is not None:
                                 st.error(f"Failed to load model: {e}")
                                 cached_infer = None
 
-                    result = single_image_predict(
-                        image_rgb=image_array,
-                        model_name="",
-                        ckpt_path="",
-                        image_size=int(image_size),
-                        threshold_mode=("dynamic" if dynamic else "static"),
-                        dynamic_pct=float(dynamic_pct),
-                        static_threshold=float(threshold),
-                        min_region_area=int(min_region_area),
-                        alpha=float(alpha),
-                        colormap=colormap,
-                        rotated=bool(draw_rotated),
-                        smooth=bool(smooth),
-                        smooth_kernel=int(smooth_kernel),
-                        torch_model_path=torch_model_path,
-                        inferencer=cached_infer,
-                    )
+                    if TorchInferencer is None or cached_infer is None:
+                        # Abort prediction gracefully if anomalib unavailable or model failed to load
+                        result = {}
+                    else:
+                        result = single_image_predict(
+                            image_rgb=image_array,
+                            model_name="",
+                            ckpt_path="",
+                            image_size=int(image_size),
+                            threshold_mode=("dynamic" if dynamic else "static"),
+                            dynamic_pct=float(dynamic_pct),
+                            static_threshold=float(threshold),
+                            min_region_area=int(min_region_area),
+                            alpha=float(alpha),
+                            colormap=colormap,
+                            rotated=bool(draw_rotated),
+                            smooth=bool(smooth),
+                            smooth_kernel=int(smooth_kernel),
+                            torch_model_path=torch_model_path,
+                            inferencer=cached_infer,
+                        )
 
                 # Guard: if some artifacts are missing, warn and render only what's available
                 required_keys = ["heatmap", "mask", "overlay"]
