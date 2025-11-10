@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import sys
 from pathlib import Path
-import tempfile
+ 
 
 # Ensure project root on sys.path for Streamlit Cloud (where working dir may differ)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -78,9 +78,7 @@ if uploaded_file is not None:
                 If you need GPU acceleration, replace the torch line with the CUDA-specific wheel.
                 After installation, restart the Streamlit app.
                 """)
-        image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
-        torch_model_text = st.text_input("Torch model path (.pt)", value="", help="Absolute or repo-relative path on server")
-        torch_model_upload = st.file_uploader("Or upload Torch model", type=["pt"], accept_multiple_files=False)
+    image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
         # Auto-discover .pt files under a directory
         st.subheader("Discover models")
         models_dir = st.text_input("Scan directory", value="checkpoints", help="Search recursively for .pt models")
@@ -137,7 +135,7 @@ if uploaded_file is not None:
         if st.button("Clear cached models"):
             st.session_state["inferencer_cache"] = {}
 
-        # Optional: download model from URL to bypass upload limits
+    # Optional: download model from URL to bypass upload limits
         st.subheader("Download model from URL")
         dl_url = st.text_input("Model URL (.pt)", value="", help="Direct link to a .pt file")
         dl_name = st.text_input("Save as (optional)", value="", help="Filename under checkpoints/ (leave empty to auto-use URL name)")
@@ -178,21 +176,15 @@ if uploaded_file is not None:
     if st.button("🔍 Detect Anomalies", type="primary"):
         with st.spinner('Analyzing image...'):
             try:
-                # Use uploaded torch model if provided; otherwise discovered/default/text path
-                tmp_model_path = None
-                if torch_model_upload is not None:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pt") as tf:
-                        tf.write(torch_model_upload.read())
-                        tmp_model_path = tf.name
-                # Priority: uploaded > selected > manual text > default local/global
-                torch_model_path = tmp_model_path or (
-                    selected_model or torch_model_text.strip() or default_model_path or (
+                # Determine model path from discovered/default selections
+                torch_model_path = (
+                    selected_model or default_model_path or (
                         default_model_path_global if 'default_model_path_global' in globals() and default_model_path_global else ""
                     )
                 )
 
                 if not torch_model_path:
-                    st.warning("Please provide or upload an Anomalib Torch model (.pt).")
+                    st.warning("No Torch model found. Place a .pt under 'checkpoints/' or use 'Download model from URL'.")
                     result = {}
                 else:
                     # Cache/reuse inferencer
