@@ -19,6 +19,7 @@ try:
     from anomalib.deploy import TorchInferencer
 except Exception:
     TorchInferencer = None
+    TORCH_INFERENCER_IMPORT_ERROR = "TorchInferencer import failed. Ensure anomalib is installed and compatible with your torch version."  # capture reason if needed
 
 # Anomalib-only backend
 try:
@@ -64,6 +65,19 @@ if uploaded_file is not None:
     # Sidebar parameters
     with st.sidebar:
         st.header("Anomalib Torch Model")
+        if TorchInferencer is None:
+            with st.expander("Install missing dependencies"):
+                st.markdown("""
+                TorchInferencer isn't available. Install dependencies in your environment:
+                
+                ```powershell
+                pip install --upgrade pip
+                pip install torch torchvision --extra-index-url https://download.pytorch.org/whl/cpu
+                pip install anomalib
+                ```
+                If you need GPU acceleration, replace the torch line with the CUDA-specific wheel.
+                After installation, restart the Streamlit app.
+                """)
         image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
         torch_model_text = st.text_input("Torch model path (.pt)", value="", help="Absolute or repo-relative path on server")
         torch_model_upload = st.file_uploader("Or upload Torch model", type=["pt"], accept_multiple_files=False)

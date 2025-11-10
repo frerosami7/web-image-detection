@@ -1,14 +1,17 @@
-numpy
-pandas
-matplotlib
-seaborn
-opencv-python-headless
-Pillow
-scikit-learn
-flask
-fastapi
-gradio
-streamlit
-anomalib
-torch
-torchvision
+numpy==2.1.2
+pandas==2.2.3
+matplotlib==3.9.2
+seaborn==0.13.2
+opencv-python-headless==4.10.0.84
+Pillow==11.0.0
+scikit-learn==1.5.2
+flask==3.0.3
+fastapi==0.115.5
+gradio==5.8.0
+streamlit==1.40.2
+# Torch CPU pins (adjust to CUDA build on GPU machines)
+torch==2.2.2+cpu ; platform_system=="Windows"
+torchvision==0.17.2+cpu ; platform_system=="Windows"
+--extra-index-url https://download.pytorch.org/whl/cpu
+# Anomalib compatible with Torch/Lightning in this range
+anomalib==1.0.1
