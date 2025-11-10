@@ -37,7 +37,7 @@ if uploaded_file is not None:
     # Convert the uploaded file to an image
     image = Image.open(uploaded_file)
     st.image(image, caption='Uploaded Image', width='stretch')
-    
+
     # Convert PIL to numpy RGB uint8
     image_array = np.array(image.convert("RGB"))
 
@@ -64,13 +64,28 @@ if uploaded_file is not None:
             if p.endswith(default_model_name):
                 default_model_path = p
                 break
-        select_options = [""] + discovered_paths
-        if default_model_path and default_model_path in select_options:
-            default_index = select_options.index(default_model_path)
+        if default_model_path:
+            # Show a banner indicating bundled model will be used by default
+            try:
+                size_mb = (Path(default_model_path).stat().st_size) / (1024*1024)
+                st.info(f"Using bundled model by default: {default_model_name} ({size_mb:.1f} MB)")
+            except Exception:
+                st.info(f"Using bundled model by default: {default_model_name}")
+            use_bundled = st.checkbox("Use bundled model", value=True)
         else:
-            default_index = 0
-        selected_model = st.selectbox("Discovered .pt models", options=select_options, index=default_index,
-                                      help="Models found under scan directory; default auto-selected if bundled.")
+            use_bundled = False
+
+        select_options = [""] + discovered_paths
+        # Only show selector when user wants to override bundled model or no bundled exists
+        if not use_bundled:
+            default_index = select_options.index(default_model_path) if default_model_path in select_options else 0
+            selected_model = st.selectbox(
+                "Discovered .pt models",
+                options=select_options,
+                index=default_index,
+                help="Models found under scan directory; default auto-selected if bundled.")
+        else:
+            selected_model = default_model_path or ""
         if st.button("Clear cached models"):
             st.session_state["inferencer_cache"] = {}
 
@@ -122,8 +137,8 @@ if uploaded_file is not None:
                         tf.write(torch_model_upload.read())
                         tmp_model_path = tf.name
                 # Priority: uploaded > discovered dropdown > manual text
-                # If a default packaged model exists, prefer it when user has not specified another (keep precedence order)
-                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip() or default_model_path or "")
+                # If a default packaged model exists and user opted to use it, prefer it when no upload/text path provided
+                torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip() or "")
 
                 if not torch_model_path:
                     st.warning("Please provide or upload an Anomalib Torch model (.pt).")
