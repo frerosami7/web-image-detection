@@ -30,6 +30,26 @@ st.set_page_config(page_title="Image Anomaly Detection", layout="wide")
 
 st.title("Image Anomaly Detection")
 
+# Preload default bundled model inferencer (if available) before user uploads image
+DEFAULT_MODEL_NAME = "reverse_distillation_one_up.pt"
+try:
+    checkpoints_dir = Path("checkpoints")
+    default_model_path_global = None
+    if checkpoints_dir.exists():
+        candidate = checkpoints_dir / DEFAULT_MODEL_NAME
+        if candidate.exists():
+            default_model_path_global = str(candidate)
+    if default_model_path_global and TorchInferencer is not None:
+        cache = st.session_state.setdefault("inferencer_cache", {})
+        if default_model_path_global not in cache:
+            try:
+                cache[default_model_path_global] = TorchInferencer(path=default_model_path_global, device="auto")
+                st.sidebar.success(f"Preloaded bundled model: {DEFAULT_MODEL_NAME}")
+            except Exception as e:
+                st.sidebar.warning(f"Failed to preload bundled model: {e}")
+except Exception:
+    pass
+
 # File uploader for images
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
@@ -138,6 +158,7 @@ if uploaded_file is not None:
                         tmp_model_path = tf.name
                 # Priority: uploaded > discovered dropdown > manual text
                 # If a default packaged model exists and user opted to use it, prefer it when no upload/text path provided
+                # Use preloaded bundled model if selected and cached
                 torch_model_path = tmp_model_path or (selected_model or torch_model_text.strip() or "")
 
                 if not torch_model_path:
