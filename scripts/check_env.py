@@ -6,6 +6,7 @@ from pathlib import Path
 report = {
     "python": sys.version,
     "venv": str(Path(sys.executable).parent.parent),
+    "cwd": str(Path.cwd()),
 }
 
 mods = {
@@ -44,5 +45,9 @@ if ckpt.exists():
         report["bundled_model_load"] = f"ERROR: {e}"
 else:
     report["bundled_model_load"] = "missing"
+
+# Guidance flags
+report["needs_torch"] = "yes" if str(report.get("torch", "")).startswith("ERROR") else "no"
+report["needs_anomalib"] = "yes" if str(report.get("anomalib.deploy", "")).startswith("ERROR") else "no"
 
 print(json.dumps(report, indent=2))
