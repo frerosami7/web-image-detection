@@ -10,6 +10,7 @@ flask==3.0.3
 fastapi==0.115.5
 gradio==5.8.0
 streamlit==1.40.2
+rich==13.7.1
 # Torch CPU pins (adjust to CUDA build on GPU machines)
 torch==2.1.2+cpu ; platform_system=="Windows"
 torchvision==0.16.2+cpu ; platform_system=="Windows"
