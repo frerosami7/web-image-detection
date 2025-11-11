@@ -17,9 +17,10 @@ except Exception as e:
 from PIL import Image
 try:
     from anomalib.deploy import TorchInferencer
-except Exception:
+    TORCH_INFERENCER_IMPORT_ERROR = None
+except Exception as e:
     TorchInferencer = None
-    TORCH_INFERENCER_IMPORT_ERROR = "TorchInferencer import failed. Ensure anomalib is installed and compatible with your torch version."  # capture reason if needed
+    TORCH_INFERENCER_IMPORT_ERROR = str(e)
 
 # Anomalib-only backend
 try:
@@ -40,6 +41,24 @@ try:
         candidate = checkpoints_dir / DEFAULT_MODEL_NAME
         if candidate.exists():
             default_model_path_global = str(candidate)
+    # Auto-download model from secrets if missing
+    if default_model_path_global is None:
+        try:
+            model_url = st.secrets.get("MODEL_URL", None)  # type: ignore[attr-defined]
+        except Exception:
+            model_url = None
+        if model_url:
+            try:
+                import shutil
+                from urllib.request import urlopen
+                dst = checkpoints_dir / DEFAULT_MODEL_NAME
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                with urlopen(model_url) as resp, open(dst, "wb") as out:
+                    shutil.copyfileobj(resp, out)
+                default_model_path_global = str(dst)
+                st.sidebar.success("Downloaded model from MODEL_URL secret")
+            except Exception as de:
+                st.sidebar.warning(f"Failed to auto-download model: {de}")
     if default_model_path_global and TorchInferencer is not None:
         cache = st.session_state.setdefault("inferencer_cache", {})
         if default_model_path_global not in cache:
@@ -76,8 +95,10 @@ if uploaded_file is not None:
                 pip install anomalib
                 ```
                 If you need GPU acceleration, replace the torch line with the CUDA-specific wheel.
-        After installation, restart the Streamlit app.
-        """)
+                After installation, restart the Streamlit app.
+                """)
+                if TORCH_INFERENCER_IMPORT_ERROR:
+                    st.code(f"Import error: {TORCH_INFERENCER_IMPORT_ERROR}")
         image_size = st.number_input("Image size (resize before infer)", min_value=64, max_value=1024, value=256, step=32)
         # Auto-discover .pt files under a directory
         st.subheader("Discover models")
@@ -194,7 +215,10 @@ if uploaded_file is not None:
                     if cached_infer is None:
                         if TorchInferencer is None:
                             st.error("Anomalib TorchInferencer not available. pip install anomalib")
+                            if TORCH_INFERENCER_IMPORT_ERROR:
+                                st.code(f"Import error: {TORCH_INFERENCER_IMPORT_ERROR}")
                             result = {}
+                            raise RuntimeError("TorchInferencer missing")
                         else:
                             try:
                                 cached_infer = TorchInferencer(path=torch_model_path, device="auto")
@@ -226,13 +250,12 @@ if uploaded_file is not None:
                         )
 
                 # Guard: if segmentation heatmap/mask missing, fall back to classification-only UI
-                is_class_only = bool(result.get("params", {}).get("classification_only", False))
-                required_keys = ["overlay"] if is_class_only else ["heatmap", "mask", "overlay"]
-                missing = [k for k in required_keys if k not in result]
-                incomplete = False
-                if missing:
-                    incomplete = True
-                    st.warning(f"Prediction incomplete. Missing keys: {missing}. Check model compatibility.")
+                is_class_only = bool(result.get("params", {}).get("classification_only", False)) if result else False
+                if result:
+                    required_keys = ["overlay"] if is_class_only else ["heatmap", "mask", "overlay"]
+                    missing = [k for k in required_keys if k not in result]
+                    if missing:
+                        st.warning(f"Prediction incomplete. Missing keys: {missing}. Check model compatibility.")
 
                 # Prediction status and metrics
                 col1, col2, col3 = st.columns(3)
