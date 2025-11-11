@@ -1,4 +1,5 @@
-numpy==2.1.2
+# Note: anomalib -> imgaug currently incompatible with NumPy 2.x; pin <2.0
+numpy==1.26.4
 pandas==2.2.3
 matplotlib==3.9.2
 seaborn==0.13.2
@@ -10,8 +11,11 @@ fastapi==0.115.5
 gradio==5.8.0
 streamlit==1.40.2
 # Torch CPU pins (adjust to CUDA build on GPU machines)
-torch==2.2.2+cpu ; platform_system=="Windows"
-torchvision==0.17.2+cpu ; platform_system=="Windows"
+torch==2.1.2+cpu ; platform_system=="Windows"
+torchvision==0.16.2+cpu ; platform_system=="Windows"
 --extra-index-url https://download.pytorch.org/whl/cpu
 # Anomalib compatible with Torch/Lightning in this range
 anomalib==1.0.1
+# Extras needed by anomalib import paths
+imgaug==0.4.0
+open_clip_torch==2.24.0
